@@ -1,0 +1,19 @@
+version: "3"
+services:
+  fetcher:
+    build: .
+    volumes:
+      - ./:/app:ro
+    environment:
+      ALPHAPOOL_DATASET: ${ALPHAPOOL_DATASET}
+      ALPHAPOOL_FETCHER_PATH: ${ALPHAPOOL_FETCHER_PATH:-/app/data/20221103_binance_ohlcv.xz}
+      ALPHAPOOL_LOG_LEVEL: debug
+      GC_PROJECT_ID: ${GC_PROJECT_ID}
+    command: python -m src.main
+    restart: always
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "32m"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
