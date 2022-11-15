@@ -10,14 +10,23 @@ from .logger import create_logger
 
 
 def fetch(fetcher):
+    data_id = fetcher.data_id
+    log_level = os.getenv('ALPHAPOOL_LOG_LEVEL')
+    keys = fetcher.keys
+    logger = create_logger(log_level, f'{data_id}-{keys}')
+    try:
+        do_fetch(fetcher, logger)
+    except Exception as e:
+        logger.error(e)
+
+
+def do_fetch(fetcher, logger):
     project_id = os.getenv('GC_PROJECT_ID')
     dataset_name = os.getenv('ALPHAPOOL_DATASET')
-    log_level = os.getenv('ALPHAPOOL_LOG_LEVEL')
+
     data_id = fetcher.data_id
     table_id = f'{dataset_name}.{data_id}'
     keys = fetcher.keys
-
-    logger = create_logger(log_level, f'{data_id}-{keys}')
     logger.info(f'start table_id:{table_id} keys:{keys}')
 
     client = bigquery.Client(project=project_id)
@@ -49,6 +58,8 @@ def fetch(fetcher):
             df[key_col] = keys[key_col]
             cols = [key_col] + cols
         df = df[cols]
+        df = df.reset_index()
+        logger.info(f'df.columns {df.columns}')
 
         if not table_exists(client, table_id):
             create_table(
@@ -59,7 +70,7 @@ def fetch(fetcher):
                 logger=logger,
             )
 
-        pandas_gbq.to_gbq(df.reset_index(), table_id, project_id=project_id, if_exists='append')
+        pandas_gbq.to_gbq(df, table_id, project_id=project_id, if_exists='append')
         logger.info(f'upload {df.shape}')
 
     logger.info('finished')
@@ -74,17 +85,15 @@ def table_exists(client=None, table_id=None):
 
 
 def create_table(client=None, keys=None, dtypes=None, logger=None, table_id=None):
-    bq_schema = [
-        bigquery.SchemaField(
-            'timestamp', 'INT64', mode="REQUIRED"
-        )
-    ]
+    bq_schema = []
     for col in dtypes.index:
         dtype = dtypes[col]
         if dtype == 'object':
             type = 'STRING'
         elif dtype == 'float64':
             type = 'FLOAT64'
+        elif dtype == 'int64':
+            type = 'INT64'
         else:
             raise Exception(f'unknown dtype {dtype}')
         bq_schema.append(bigquery.SchemaField(
