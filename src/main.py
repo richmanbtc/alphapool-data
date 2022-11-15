@@ -41,6 +41,7 @@ def fetch(fetcher):
         df = fetcher.fetch(last_timestamp=last_timestamp)
 
         if df.shape[0] == 0:
+            logger.info('empty df')
             break
 
         cols = list(df.columns)
