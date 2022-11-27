@@ -19,7 +19,8 @@ RUN pip install --no-cache-dir \
     pandas-gbq \
     retry==0.9.2 \
     yfinance \
-    quandl
+    quandl \
+    pytrends
 
 #dataset==1.5.2 \
 #    psycopg2==2.9.3 \
