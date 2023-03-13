@@ -1,7 +1,4 @@
 import os
-from functools import partial
-import threading
-import time
 import joblib
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
@@ -17,7 +14,7 @@ def fetch(fetcher):
     try:
         do_fetch(fetcher, logger)
     except Exception as e:
-        logger.error(e)
+        logger.error(e, exc_info=True)
 
 
 def do_fetch(fetcher, logger):
@@ -118,10 +115,8 @@ fetcher_path = os.getenv('ALPHAPOOL_FETCHER_PATH')
 fetchers = joblib.load(fetcher_path)
 
 threads = []
-for fetcher in fetchers:
-    thread = threading.Thread(target=partial(fetch, fetcher))
-    thread.start()
-    threads.append(thread)
 
-for thread in threads:
-    thread.join()
+n_jobs = int(os.getenv('ALPHAPOOL_PARALLEL', len(fetchers)))
+
+joblib.Parallel(n_jobs=n_jobs, backend='threading')(
+    [joblib.delayed(fetch)(fetcher) for fetcher in fetchers])
