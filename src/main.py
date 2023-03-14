@@ -1,4 +1,6 @@
 import os
+from functools import partial
+import threading
 import joblib
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
@@ -115,8 +117,10 @@ fetcher_path = os.getenv('ALPHAPOOL_FETCHER_PATH')
 fetchers = joblib.load(fetcher_path)
 
 threads = []
+for fetcher in fetchers:
+    thread = threading.Thread(target=partial(fetch, fetcher))
+    thread.start()
+    threads.append(thread)
 
-n_jobs = int(os.getenv('ALPHAPOOL_PARALLEL', len(fetchers)))
-
-joblib.Parallel(n_jobs=n_jobs, backend='threading')(
-    [joblib.delayed(fetch)(fetcher) for fetcher in fetchers])
+for thread in threads:
+    thread.join()
