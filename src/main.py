@@ -28,6 +28,8 @@ def do_fetch(fetcher, logger):
     keys = fetcher.keys
     logger.info(f'start table_id:{table_id} keys:{keys}')
 
+    replace_mode = getattr(fetcher, 'replace_mode', False)
+
     client = bigquery.Client(project=project_id)
 
     while True:
@@ -69,7 +71,8 @@ def do_fetch(fetcher, logger):
                 logger=logger,
             )
 
-        pandas_gbq.to_gbq(df, table_id, project_id=project_id, if_exists='append')
+        pandas_gbq.to_gbq(df, table_id, project_id=project_id,
+                          if_exists='replace' if replace_mode else 'append')
         logger.info(f'upload {df.shape}')
 
     logger.info('finished')
