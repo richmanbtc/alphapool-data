@@ -1,28 +1,32 @@
 import os
 from functools import partial
+import itertools
 import threading
+import time
 import joblib
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
+import pandas as pd
 import pandas_gbq
 from .logger import create_logger
 
 
-def fetch(fetcher):
+project_id = os.getenv('GC_PROJECT_ID')
+dataset_name = os.getenv('ALPHAPOOL_DATASET')
+log_level = os.getenv('ALPHAPOOL_LOG_LEVEL')
+
+
+def fetch(fetcher, uploader):
     data_id = fetcher.data_id
-    log_level = os.getenv('ALPHAPOOL_LOG_LEVEL')
     keys = fetcher.keys
     logger = create_logger(log_level, f'{data_id}-{keys}')
     try:
-        do_fetch(fetcher, logger)
+        do_fetch(fetcher, logger, uploader)
     except Exception as e:
         logger.error(e, exc_info=True)
 
 
-def do_fetch(fetcher, logger):
-    project_id = os.getenv('GC_PROJECT_ID')
-    dataset_name = os.getenv('ALPHAPOOL_DATASET')
-
+def do_fetch(fetcher, logger, uploader):
     data_id = fetcher.data_id
     table_id = f'{dataset_name}.{data_id}'
     keys = fetcher.keys
@@ -71,9 +75,19 @@ def do_fetch(fetcher, logger):
                 logger=logger,
             )
 
-        pandas_gbq.to_gbq(df, table_id, project_id=project_id,
-                          if_exists='replace' if replace_mode else 'append')
-        logger.info(f'upload {df.shape}')
+        if replace_mode:
+            pandas_gbq.to_gbq(
+                df, table_id,
+                project_id=project_id,
+                if_exists='replace'
+            )
+            logger.info(f'replace {df.shape}')
+        else:
+            uploader.add({
+                'df': df,
+                'table_id': table_id,
+            })
+            logger.info(f'append queue {df.shape}')
 
     logger.info('finished')
 
@@ -116,14 +130,57 @@ def create_table(client=None, keys=None, dtypes=None, logger=None, table_id=None
     return table
 
 
+class Uploader:
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.queue = []
+        self.terminated = False
+        self.thread = threading.Thread(target=self.run)
+        self.thread.start()
+
+    def terminate(self):
+        self.terminated = True
+        self.thread.join()
+
+    def add(self, x):
+        with self.lock:
+            self.queue.append(x)
+
+    def run(self):
+        logger = create_logger(log_level, 'upload')
+
+        while True:
+            with self.lock:
+                q = self.queue
+                if len(q) == 0 and self.terminated:
+                    return
+                self.queue = []
+
+            for table_id, x in itertools.groupby(q, key=lambda x: x['table_id']):
+                df = pd.concat([y['df'] for y in x]).reset_index(drop=True)
+                pandas_gbq.to_gbq(
+                    df,
+                    table_id,
+                    project_id=project_id,
+                    if_exists='append'
+                )
+                logger.info(f'append upload {df.shape}')
+
+            time.sleep(10)
+
+
 fetcher_path = os.getenv('ALPHAPOOL_FETCHER_PATH')
 fetchers = joblib.load(fetcher_path)
+uploader = Uploader()
 
 threads = []
+
 for fetcher in fetchers:
-    thread = threading.Thread(target=partial(fetch, fetcher))
+    thread = threading.Thread(target=partial(fetch, fetcher, uploader))
     thread.start()
     threads.append(thread)
 
 for thread in threads:
     thread.join()
+
+uploader.terminate()
