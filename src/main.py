@@ -27,6 +27,7 @@ def fetch(fetcher, uploader):
 
 
 def do_fetch(fetcher, logger, uploader):
+    now = int(time.time())
     data_id = fetcher.data_id
     table_id = f'{dataset_name}.{data_id}'
     keys = fetcher.keys
@@ -39,17 +40,22 @@ def do_fetch(fetcher, logger, uploader):
     while True:
         last_timestamp = None
         if table_exists(client, table_id):
-            query = f'SELECT MAX(timestamp) as last_timestamp FROM `{table_id}`'
-            if len(keys) > 0:
+            for lookback in [7 * 24 * 60 * 60, None]:
+                query = f'SELECT MAX(timestamp) as last_timestamp FROM `{table_id}`'
                 cond = []
+                if lookback is not None:
+                    cond.append(f'timestamp > {now - lookback}')
                 for key_col in keys:
                     cond.append(f"`{key_col}`='{keys[key_col]}'")
-                cond = ' AND '.join(cond)
-                query += f' WHERE {cond}'
-            query_job = client.query(query)
-            for row in query_job:
-                if row['last_timestamp'] is not None:
-                    last_timestamp = row['last_timestamp']
+                if len(cond) > 0:
+                    cond = ' AND '.join(cond)
+                    query += f' WHERE {cond}'
+                query_job = client.query(query)
+                for row in query_job:
+                    if row['last_timestamp'] is not None:
+                        last_timestamp = row['last_timestamp']
+                if last_timestamp is not None:
+                    break
         logger.info(f'last_timestamp:{last_timestamp}')
 
         df = fetcher.fetch(last_timestamp=last_timestamp)
