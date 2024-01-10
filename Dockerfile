@@ -18,7 +18,7 @@ RUN pip install --no-cache-dir \
     gql[all] \
     pandas-gbq \
     retry==0.9.2 \
-    yfinance==0.2.12 \
+    yfinance==0.2.35 \
     quandl \
     pytrends
 
